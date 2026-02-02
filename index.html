@@ -2,10 +2,10 @@
 <html lang="de">
 <head>
 <meta charset="UTF-8">
-<title>Mini Minecraft 2D Infinite</title>
+<title>Mini Minecraft 2D Full</title>
 <style>
-  body { margin:0; background:#87ceeb; }
-  canvas { display:block; }
+body { margin:0; background:#87ceeb; }
+canvas { display:block; }
 </style>
 </head>
 <body>
@@ -13,48 +13,51 @@
 <canvas id="game"></canvas>
 
 <script>
-const canvas=document.getElementById("game");
-const ctx=canvas.getContext("2d");
-canvas.width=800; canvas.height=400;
+const canvas = document.getElementById("game");
+const ctx = canvas.getContext("2d");
+canvas.width = 800;
+canvas.height = 400;
 
-const TILE=40;
-
-// Ressourcen: 0=Luft, 1=Erde, 2=Stein, 3=Holz, 4=Werkbank, 5=Eisen, 6=Gold, 7=Diamant, 8=Wasser
-let world=[];
-const ROWS=10;
-const COLS=100; // Start mit 100 Blöcken Breite
-for(let y=0;y<ROWS;y++){
-  world[y]=[];
-  for(let x=0;x<COLS;x++){
-    if(y>=5){
-      let r=Math.random();
-      if(r<0.05) world[y][x]=7; // Diamant
-      else if(r<0.10) world[y][x]=6; // Gold
-      else if(r<0.25) world[y][x]=5; // Eisen
-      else world[y][x]=2; // Stein garantiert
-    } else world[y][x]=0; // Luft oben
+const TILE = 40;
+const ROWS = 10;
+let world = [];
+let COLS = 100; // initial
+const generateColumn = (colIndex) => {
+  let col = [];
+  for (let y = 0; y < ROWS; y++) {
+    if (y < 5) col.push(0); // Luft
+    else if (y === 5) col.push(1); // Gras
+    else {
+      let r = Math.random();
+      if(r<0.02) col.push(7); // Diamant
+      else if(r<0.07) col.push(6); // Gold
+      else if(r<0.2) col.push(5); // Eisen
+      else col.push(2); // Stein
+    }
   }
+  // Bäume
+  if(Math.random()<0.1){
+    col[4]=3; col[3]=3; col[2]=3; // Holzstamm
+  }
+  // Wasser
+  if(Math.random()<0.03) col[5]=8;
+  return col;
 }
+// initiale Welt
+for(let x=0;x<COLS;x++) world.push(generateColumn(x));
 
-// Spieler
-const player={x:100,y:100,w:30,h:30,hp:5,tool:null};
-
-// Monster
-let monsters=[];
-
-// Inventar
-let inventory={dirt:0,stone:0,wood:0,table:0,sword:0,pickaxe:0,iron:0,gold:0,diamond:0,water:0};
-
-// Tasten
-const keys={};
+let player = {x:100,y:100,w:30,h:30,hp:5,tool:null};
+let monsters = [];
+let inventory = {dirt:0,stone:0,wood:0,table:0,sword:0,pickaxe:0,iron:0,gold:0,diamond:0,water:0};
+let keys = {};
 document.addEventListener("keydown", e=>keys[e.key]=true);
 document.addEventListener("keyup", e=>keys[e.key]=false);
 
-// Abbauen / Platzieren
+// Abbauen/Platzieren
 canvas.addEventListener("click", e=>{
-  const x=Math.floor((e.offsetX+cameraX)/TILE);
-  const y=Math.floor(e.offsetY/TILE);
-  const block=world[y][x];
+  const x = Math.floor((e.offsetX+cameraX)/TILE);
+  const y = Math.floor(e.offsetY/TILE);
+  const block = world[x][y];
   if(block>0){
     if(block===1) inventory.dirt++;
     if(block===2) inventory.stone++;
@@ -63,16 +66,15 @@ canvas.addEventListener("click", e=>{
     if(block===6) inventory.gold++;
     if(block===7) inventory.diamond++;
     if(block===8) inventory.water++;
-    world[y][x]=0;
+    world[x][y]=0;
   } else {
-    // Platzieren aus Inventar
-    if(inventory.dirt>0){ world[y][x]=1; inventory.dirt--; }
-    else if(inventory.stone>0){ world[y][x]=2; inventory.stone--; }
-    else if(inventory.wood>0){ world[y][x]=3; inventory.wood--; }
+    if(inventory.dirt>0){ world[x][y]=1; inventory.dirt--; }
+    else if(inventory.stone>0){ world[x][y]=2; inventory.stone--; }
+    else if(inventory.wood>0){ world[x][y]=3; inventory.wood--; }
   }
 });
 
-// Crafting Rezepte
+// Crafting
 document.addEventListener("keydown", e=>{
   if(e.key==="c"){
     if(inventory.wood>=4){ inventory.wood-=4; inventory.table++; }
@@ -86,20 +88,17 @@ document.addEventListener("keydown", e=>{
   if(e.key==="t" && inventory.table>0){
     const x=Math.floor(player.x/TILE);
     const y=Math.floor(player.y/TILE);
-    world[y][x]=4; inventory.table--;
+    world[x][y]=4; inventory.table--;
   }
 });
 
 // Tag/Nacht
-let time=0; //0=Tag, 0.5=Mitternacht
-function updateTime(){ time+=0.001; if(time>1) time=0; }
+let time=0; //0-1
+function updateTime(){ time+=0.001; if(time>1)time=0; }
 
-// Kamera (scrollend)
+// Kamera
 let cameraX=0;
-function updateCamera(){
-  cameraX=player.x - canvas.width/2;
-  if(cameraX<0) cameraX=0;
-}
+function updateCamera(){ cameraX = player.x - canvas.width/2; if(cameraX<0) cameraX=0; }
 
 // Spieler bewegen
 function updatePlayer(){
@@ -111,7 +110,7 @@ function updatePlayer(){
   player.y=Math.max(0,Math.min(player.y,canvas.height-player.h));
 }
 
-// Monster spawn nur nachts
+// Monster spawn nachts
 function spawnMonsters(){
   if(time>0.5 && Math.random()<0.01 && monsters.length<10){
     monsters.push({x:cameraX+canvas.width+Math.random()*200,y:300,w:30,h:30,dir:-1,speed:1.5});
@@ -121,11 +120,11 @@ function spawnMonsters(){
 // Monster KI
 function updateMonsters(){
   monsters.forEach(mon=>{
-    const dx=player.x-mon.x;
-    const dy=player.y-mon.y;
-    const dist=Math.sqrt(dx*dx+dy*dy);
-    if(dist<200){ mon.x+=dx/dist*mon.speed; mon.y+=dy/dist*mon.speed; }
-    else{ mon.x+=mon.dir*mon.speed; }
+    const dx = player.x-mon.x;
+    const dy = player.y-mon.y;
+    const dist = Math.sqrt(dx*dx + dy*dy);
+    if(dist<200){ mon.x += dx/dist*mon.speed; mon.y += dy/dist*mon.speed; }
+    else{ mon.x += mon.dir*mon.speed; }
     if(player.x<mon.x+mon.w && player.x+player.w>mon.x && player.y<mon.y+mon.h && player.y+player.h>mon.y){
       if(player.tool==="sword"){ monsters.splice(monsters.indexOf(mon),1); }
       else{ player.hp--; if(player.hp<=0){ alert("Du bist gestorben!"); location.reload(); } }
@@ -135,29 +134,19 @@ function updateMonsters(){
 
 // Unendliche Welt erweitern
 function extendWorld(){
-  const lastCol=world[0].length;
-  for(let y=0;y<ROWS;y++){
-    for(let i=0;i<5;i++){
-      let block=0;
-      if(y>=5){
-        let r=Math.random();
-        if(r<0.02) block=7;
-        else if(r<0.07) block=6;
-        else if(r<0.2) block=5;
-        else block=2;
-      }
-      world[y].push(block);
-    }
+  const lastCol = world.length;
+  for(let i=0;i<5;i++){
+    world.push(generateColumn(lastCol+i));
   }
 }
 
 // Zeichnen
 function drawWorld(){
-  const bg=`rgba(${135*(1-time)},${206*(1-time)},${235*(1-time)},1)`;
+  const bg = `rgba(${135*(1-time)},${206*(1-time)},${235*(1-time)},1)`;
   ctx.fillStyle=bg; ctx.fillRect(0,0,canvas.width,canvas.height);
-  for(let y=0;y<ROWS;y++){
-    for(let x=0;x<world[y].length;x++){
-      const b=world[y][x];
+  for(let x=0;x<world.length;x++){
+    for(let y=0;y<ROWS;y++){
+      const b=world[x][y];
       if(b===1){ ctx.fillStyle="#654321"; ctx.fillRect(x*TILE-cameraX,y*TILE,TILE,TILE); }
       if(b===2){ ctx.fillStyle="#888888"; ctx.fillRect(x*TILE-cameraX,y*TILE,TILE,TILE); }
       if(b===3){ ctx.fillStyle="#deb887"; ctx.fillRect(x*TILE-cameraX,y*TILE,TILE,TILE); }
@@ -170,7 +159,6 @@ function drawWorld(){
   }
 }
 
-// Spieler / Monster / UI
 function drawPlayer(){ ctx.fillStyle="red"; ctx.fillRect(player.x-cameraX,player.y,player.w,player.h); }
 function drawMonsters(){ monsters.forEach(mon=>{ ctx.fillStyle="green"; ctx.fillRect(mon.x-cameraX,mon.y,mon.w,mon.h); }); }
 function drawUI(){
