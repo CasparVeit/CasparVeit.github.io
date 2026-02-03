@@ -13,7 +13,7 @@ canvas{display:block}
 <canvas id="game"></canvas>
 
 <script>
-/* ================= GRUNDLAGEN ================= */
+/* ================= BASIS ================= */
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
 canvas.width = 900;
@@ -30,7 +30,7 @@ const ROWS = 12;
 let world = [];
 let cameraX = 0;
 
-/* ================= WELT (UNENDLICH) ================= */
+/* ================= WELT ================= */
 function generateColumn(){
   let col=[];
   for(let y=0;y<ROWS;y++){
@@ -47,9 +47,7 @@ function generateColumn(){
   if(Math.random()<0.1){ col[4]=3; col[3]=3; }
   return col;
 }
-
-for(let i=0;i<50;i++) world.push(generateColumn());
-
+for(let i=0;i<60;i++) world.push(generateColumn());
 function extendWorld(){
   if(cameraX/TILE + 30 > world.length){
     for(let i=0;i<10;i++) world.push(generateColumn());
@@ -57,22 +55,20 @@ function extendWorld(){
 }
 
 /* ================= SPIELER ================= */
-const player = {
-  x:200, y:0, w:30, h:30,
-  vy:0, onGround:false,
-  hp:5
+const player={
+  x:200,y:0,w:30,h:30,
+  vy:0,onGround:false,
+  hp:10,hunger:10
 };
 
 /* ================= INVENTAR ================= */
-let inventory={
-  1:0,2:0,3:0,4:0,5:0,6:0,7:0,8:0
-};
-
+let inventory={1:0,2:0,3:0,4:0,5:0,6:0,7:0};
 let hotbar=[1,2,3,4,null,null,null,null,null];
 let selectedSlot=0;
 
-/* ================= MONSTER ================= */
+/* ================= MONSTER & TIERE ================= */
 let monsters=[];
+let animals=[];
 
 /* ================= STEUERUNG ================= */
 const keys={};
@@ -89,33 +85,30 @@ function solidAt(x,y){
   return world[bx]?.[by]>0;
 }
 
-function physics(){
-  player.vy+=0.5;
-  player.y+=player.vy;
-
-  const footY=Math.floor((player.y+player.h)/TILE);
-  const footX=Math.floor(player.x/TILE);
-
+function applyPhysics(obj){
+  obj.vy+=0.5;
+  obj.y+=obj.vy;
+  const footY=Math.floor((obj.y+obj.h)/TILE);
+  const footX=Math.floor(obj.x/TILE);
   if(world[footX]?.[footY]>0){
-    player.y=footY*TILE-player.h;
-    player.vy=0;
-    player.onGround=true;
-  } else player.onGround=false;
+    obj.y=footY*TILE-obj.h;
+    obj.vy=0;
+    obj.onGround=true;
+  } else obj.onGround=false;
 }
 
-/* ================= BEWEGUNG ================= */
+/* ================= SPIELER ================= */
 function move(dx){
   if(!solidAt(player.x+dx,player.y) &&
      !solidAt(player.x+dx+player.w,player.y)){
     player.x+=dx;
   }
 }
-
 function updatePlayer(){
   if(keys["a"]) move(-4);
   if(keys["d"]) move(4);
   if(keys["w"]&&player.onGround) player.vy=-10;
-  physics();
+  applyPhysics(player);
   cameraX=player.x-canvas.width/2;
   if(cameraX<0) cameraX=0;
 }
@@ -127,29 +120,16 @@ canvas.addEventListener("mousedown",e=>{
   const y=Math.floor(e.offsetY/TILE);
   const b=world[x]?.[y];
   if(b>0){
-    inventory[b]++;
-    world[x][y]=0;
+    inventory[b]++; world[x][y]=0;
   }
 });
-
 canvas.addEventListener("contextmenu",e=>{
   e.preventDefault();
   const x=Math.floor((e.offsetX+cameraX)/TILE);
   const y=Math.floor(e.offsetY/TILE);
   const item=hotbar[selectedSlot];
-  if(item && inventory[item]>0 && world[x][y]===0){
-    world[x][y]=item;
-    inventory[item]--;
-  }
-});
-
-/* ================= CRAFTING ================= */
-document.addEventListener("keydown",e=>{
-  if(e.key==="e"){
-    if(inventory[3]>=4){ inventory[3]-=4; inventory[4]++; alert("Werkbank!"); }
-    if(inventory[3]>=2&&inventory[2]>=1){
-      inventory[3]-=2; inventory[2]-=1; alert("Schwert!");
-    }
+  if(item&&inventory[item]>0&&world[x][y]===0){
+    world[x][y]=item; inventory[item]--;
   }
 });
 
@@ -160,19 +140,45 @@ function updateTime(){ time+=0.001; if(time>1) time=0; }
 /* ================= MONSTER ================= */
 function spawnMonsters(){
   if(time>0.5 && Math.random()<0.02){
-    monsters.push({x:player.x+600,y:0,w:30,h:30});
+    monsters.push({x:player.x+600,y:0,w:30,h:30,vy:0,onGround:false});
   }
 }
-
 function updateMonsters(){
   monsters.forEach(m=>{
     m.x+=(player.x>m.x?1:-1)*1.2;
+    applyPhysics(m);
     if(player.x<m.x+m.w&&player.x+player.w>m.x&&
        player.y<m.y+m.h&&player.y+player.h>m.y){
       player.hp--;
-      if(player.hp<=0){ alert("Tot"); location.reload(); }
     }
   });
+}
+
+/* ================= TIERE ================= */
+function spawnAnimals(){
+  if(Math.random()<0.01){
+    animals.push({x:player.x+400,y:0,w:30,h:30,vy:0,onGround:false});
+  }
+}
+function updateAnimals(){
+  animals.forEach(a=>{
+    if(Math.random()<0.02) a.x+=Math.random()<0.5?-1:1;
+    applyPhysics(a);
+  });
+}
+
+/* ================= UI ================= */
+function drawHearts(){
+  for(let i=0;i<player.hp;i++){
+    ctx.fillStyle="red";
+    ctx.fillRect(10+i*15,10,12,12);
+  }
+}
+function drawHunger(){
+  for(let i=0;i<player.hunger;i++){
+    ctx.fillStyle="orange";
+    ctx.fillRect(10+i*15,30,12,12);
+  }
 }
 
 /* ================= ZEICHNEN ================= */
@@ -184,10 +190,7 @@ function draw(){
     for(let y=0;y<ROWS;y++){
       const b=world[x][y];
       if(!b) continue;
-      const colors={
-        1:"#654321",2:"#888",3:"#deb887",
-        4:"#b5651d",5:"#aaa",6:"#ffd700",7:"#0dd",8:"#00f"
-      };
+      const colors={1:"#654321",2:"#888",3:"#deb887",4:"#b5651d",5:"#aaa",6:"#ffd700",7:"#0dd"};
       ctx.fillStyle=colors[b];
       ctx.fillRect(x*TILE-cameraX,y*TILE,TILE,TILE);
     }
@@ -197,13 +200,13 @@ function draw(){
   ctx.fillRect(player.x-cameraX,player.y,player.w,player.h);
 
   ctx.fillStyle="green";
-  monsters.forEach(m=>{
-    ctx.fillRect(m.x-cameraX,m.y,m.w,m.h);
-  });
+  monsters.forEach(m=>ctx.fillRect(m.x-cameraX,m.y,m.w,m.h));
 
-  ctx.fillStyle="black";
-  ctx.fillText("HP:"+player.hp,10,20);
-  ctx.fillText("Slot:"+(selectedSlot+1),10,40);
+  ctx.fillStyle="brown";
+  animals.forEach(a=>ctx.fillRect(a.x-cameraX,a.y,a.w,a.h));
+
+  drawHearts();
+  drawHunger();
 }
 
 /* ================= LOOP ================= */
@@ -212,7 +215,9 @@ function loop(){
   extendWorld();
   updatePlayer();
   spawnMonsters();
+  spawnAnimals();
   updateMonsters();
+  updateAnimals();
   draw();
   requestAnimationFrame(loop);
 }
