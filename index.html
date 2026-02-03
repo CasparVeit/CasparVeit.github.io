@@ -2,10 +2,10 @@
 <html lang="de">
 <head>
 <meta charset="UTF-8">
-<title>Mini Minecraft 2D Full</title>
+<title>Mini Minecraft 2D</title>
 <style>
-body { margin:0; background:#87ceeb; }
-canvas { display:block; }
+body{margin:0;overflow:hidden;background:#87ceeb}
+canvas{display:block}
 </style>
 </head>
 <body>
@@ -13,178 +13,209 @@ canvas { display:block; }
 <canvas id="game"></canvas>
 
 <script>
+/* ================= GRUNDLAGEN ================= */
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
-canvas.width = 800;
-canvas.height = 400;
+canvas.width = 900;
+canvas.height = 450;
 
 const TILE = 40;
-const ROWS = 10;
+const ROWS = 12;
+
+/* Block-IDs
+0 Luft | 1 Erde | 2 Stein | 3 Holz | 4 Werkbank
+5 Eisen | 6 Gold | 7 Diamant | 8 Wasser
+*/
+
 let world = [];
-let COLS = 100; // initial
-const generateColumn = (colIndex) => {
-  let col = [];
-  for (let y = 0; y < ROWS; y++) {
-    if (y < 5) col.push(0); // Luft
-    else if (y === 5) col.push(1); // Gras
-    else {
-      let r = Math.random();
-      if(r<0.02) col.push(7); // Diamant
-      else if(r<0.07) col.push(6); // Gold
-      else if(r<0.2) col.push(5); // Eisen
-      else col.push(2); // Stein
+let cameraX = 0;
+
+/* ================= WELT (UNENDLICH) ================= */
+function generateColumn(){
+  let col=[];
+  for(let y=0;y<ROWS;y++){
+    if(y<5) col.push(0);
+    else if(y===5) col.push(1);
+    else{
+      let r=Math.random();
+      if(r<0.02) col.push(7);
+      else if(r<0.07) col.push(6);
+      else if(r<0.2) col.push(5);
+      else col.push(2);
     }
   }
-  // Bäume
-  if(Math.random()<0.1){
-    col[4]=3; col[3]=3; col[2]=3; // Holzstamm
-  }
-  // Wasser
-  if(Math.random()<0.03) col[5]=8;
+  if(Math.random()<0.1){ col[4]=3; col[3]=3; }
   return col;
 }
-// initiale Welt
-for(let x=0;x<COLS;x++) world.push(generateColumn(x));
 
-let player = {x:100,y:100,w:30,h:30,hp:5,tool:null};
-let monsters = [];
-let inventory = {dirt:0,stone:0,wood:0,table:0,sword:0,pickaxe:0,iron:0,gold:0,diamond:0,water:0};
-let keys = {};
-document.addEventListener("keydown", e=>keys[e.key]=true);
-document.addEventListener("keyup", e=>keys[e.key]=false);
+for(let i=0;i<50;i++) world.push(generateColumn());
 
-// Abbauen/Platzieren
-canvas.addEventListener("click", e=>{
-  const x = Math.floor((e.offsetX+cameraX)/TILE);
-  const y = Math.floor(e.offsetY/TILE);
-  const block = world[x][y];
-  if(block>0){
-    if(block===1) inventory.dirt++;
-    if(block===2) inventory.stone++;
-    if(block===3) inventory.wood++;
-    if(block===5) inventory.iron++;
-    if(block===6) inventory.gold++;
-    if(block===7) inventory.diamond++;
-    if(block===8) inventory.water++;
-    world[x][y]=0;
-  } else {
-    if(inventory.dirt>0){ world[x][y]=1; inventory.dirt--; }
-    else if(inventory.stone>0){ world[x][y]=2; inventory.stone--; }
-    else if(inventory.wood>0){ world[x][y]=3; inventory.wood--; }
+function extendWorld(){
+  if(cameraX/TILE + 30 > world.length){
+    for(let i=0;i<10;i++) world.push(generateColumn());
   }
-});
+}
 
-// Crafting
-document.addEventListener("keydown", e=>{
-  if(e.key==="c"){
-    if(inventory.wood>=4){ inventory.wood-=4; inventory.table++; }
-    if(inventory.wood>=2 && inventory.stone>=1 && inventory.table>=1){ inventory.wood-=2; inventory.stone-=1; inventory.sword++; player.tool="sword"; }
-    if(inventory.wood>=2 && inventory.stone>=2 && inventory.table>=1){ inventory.wood-=2; inventory.stone-=2; inventory.pickaxe++; player.tool="pickaxe"; }
+/* ================= SPIELER ================= */
+const player = {
+  x:200, y:0, w:30, h:30,
+  vy:0, onGround:false,
+  hp:5
+};
+
+/* ================= INVENTAR ================= */
+let inventory={
+  1:0,2:0,3:0,4:0,5:0,6:0,7:0,8:0
+};
+
+let hotbar=[1,2,3,4,null,null,null,null,null];
+let selectedSlot=0;
+
+/* ================= MONSTER ================= */
+let monsters=[];
+
+/* ================= STEUERUNG ================= */
+const keys={};
+document.addEventListener("keydown",e=>{
+  keys[e.key]=true;
+  if(e.key>="1"&&e.key<="9") selectedSlot=Number(e.key)-1;
+});
+document.addEventListener("keyup",e=>keys[e.key]=false);
+
+/* ================= PHYSIK ================= */
+function solidAt(x,y){
+  const bx=Math.floor(x/TILE);
+  const by=Math.floor(y/TILE);
+  return world[bx]?.[by]>0;
+}
+
+function physics(){
+  player.vy+=0.5;
+  player.y+=player.vy;
+
+  const footY=Math.floor((player.y+player.h)/TILE);
+  const footX=Math.floor(player.x/TILE);
+
+  if(world[footX]?.[footY]>0){
+    player.y=footY*TILE-player.h;
+    player.vy=0;
+    player.onGround=true;
+  } else player.onGround=false;
+}
+
+/* ================= BEWEGUNG ================= */
+function move(dx){
+  if(!solidAt(player.x+dx,player.y) &&
+     !solidAt(player.x+dx+player.w,player.y)){
+    player.x+=dx;
   }
-});
+}
 
-// Werkbank setzen
-document.addEventListener("keydown", e=>{
-  if(e.key==="t" && inventory.table>0){
-    const x=Math.floor(player.x/TILE);
-    const y=Math.floor(player.y/TILE);
-    world[x][y]=4; inventory.table--;
-  }
-});
-
-// Tag/Nacht
-let time=0; //0-1
-function updateTime(){ time+=0.001; if(time>1)time=0; }
-
-// Kamera
-let cameraX=0;
-function updateCamera(){ cameraX = player.x - canvas.width/2; if(cameraX<0) cameraX=0; }
-
-// Spieler bewegen
 function updatePlayer(){
-  if(keys["a"]) player.x-=4;
-  if(keys["d"]) player.x+=4;
-  if(keys["w"]) player.y-=4;
-  if(keys["s"]) player.y+=4;
-  player.x=Math.max(0,player.x);
-  player.y=Math.max(0,Math.min(player.y,canvas.height-player.h));
+  if(keys["a"]) move(-4);
+  if(keys["d"]) move(4);
+  if(keys["w"]&&player.onGround) player.vy=-10;
+  physics();
+  cameraX=player.x-canvas.width/2;
+  if(cameraX<0) cameraX=0;
 }
 
-// Monster spawn nachts
+/* ================= MAUS ================= */
+canvas.addEventListener("mousedown",e=>{
+  if(e.button!==0) return;
+  const x=Math.floor((e.offsetX+cameraX)/TILE);
+  const y=Math.floor(e.offsetY/TILE);
+  const b=world[x]?.[y];
+  if(b>0){
+    inventory[b]++;
+    world[x][y]=0;
+  }
+});
+
+canvas.addEventListener("contextmenu",e=>{
+  e.preventDefault();
+  const x=Math.floor((e.offsetX+cameraX)/TILE);
+  const y=Math.floor(e.offsetY/TILE);
+  const item=hotbar[selectedSlot];
+  if(item && inventory[item]>0 && world[x][y]===0){
+    world[x][y]=item;
+    inventory[item]--;
+  }
+});
+
+/* ================= CRAFTING ================= */
+document.addEventListener("keydown",e=>{
+  if(e.key==="e"){
+    if(inventory[3]>=4){ inventory[3]-=4; inventory[4]++; alert("Werkbank!"); }
+    if(inventory[3]>=2&&inventory[2]>=1){
+      inventory[3]-=2; inventory[2]-=1; alert("Schwert!");
+    }
+  }
+});
+
+/* ================= TAG / NACHT ================= */
+let time=0;
+function updateTime(){ time+=0.001; if(time>1) time=0; }
+
+/* ================= MONSTER ================= */
 function spawnMonsters(){
-  if(time>0.5 && Math.random()<0.01 && monsters.length<10){
-    monsters.push({x:cameraX+canvas.width+Math.random()*200,y:300,w:30,h:30,dir:-1,speed:1.5});
+  if(time>0.5 && Math.random()<0.02){
+    monsters.push({x:player.x+600,y:0,w:30,h:30});
   }
 }
 
-// Monster KI
 function updateMonsters(){
-  monsters.forEach(mon=>{
-    const dx = player.x-mon.x;
-    const dy = player.y-mon.y;
-    const dist = Math.sqrt(dx*dx + dy*dy);
-    if(dist<200){ mon.x += dx/dist*mon.speed; mon.y += dy/dist*mon.speed; }
-    else{ mon.x += mon.dir*mon.speed; }
-    if(player.x<mon.x+mon.w && player.x+player.w>mon.x && player.y<mon.y+mon.h && player.y+player.h>mon.y){
-      if(player.tool==="sword"){ monsters.splice(monsters.indexOf(mon),1); }
-      else{ player.hp--; if(player.hp<=0){ alert("Du bist gestorben!"); location.reload(); } }
+  monsters.forEach(m=>{
+    m.x+=(player.x>m.x?1:-1)*1.2;
+    if(player.x<m.x+m.w&&player.x+player.w>m.x&&
+       player.y<m.y+m.h&&player.y+player.h>m.y){
+      player.hp--;
+      if(player.hp<=0){ alert("Tot"); location.reload(); }
     }
   });
 }
 
-// Unendliche Welt erweitern
-function extendWorld(){
-  const lastCol = world.length;
-  for(let i=0;i<5;i++){
-    world.push(generateColumn(lastCol+i));
-  }
-}
+/* ================= ZEICHNEN ================= */
+function draw(){
+  ctx.fillStyle=`rgb(${135*(1-time)},${206*(1-time)},${235*(1-time)})`;
+  ctx.fillRect(0,0,canvas.width,canvas.height);
 
-// Zeichnen
-function drawWorld(){
-  const bg = `rgba(${135*(1-time)},${206*(1-time)},${235*(1-time)},1)`;
-  ctx.fillStyle=bg; ctx.fillRect(0,0,canvas.width,canvas.height);
   for(let x=0;x<world.length;x++){
     for(let y=0;y<ROWS;y++){
       const b=world[x][y];
-      if(b===1){ ctx.fillStyle="#654321"; ctx.fillRect(x*TILE-cameraX,y*TILE,TILE,TILE); }
-      if(b===2){ ctx.fillStyle="#888888"; ctx.fillRect(x*TILE-cameraX,y*TILE,TILE,TILE); }
-      if(b===3){ ctx.fillStyle="#deb887"; ctx.fillRect(x*TILE-cameraX,y*TILE,TILE,TILE); }
-      if(b===4){ ctx.fillStyle="#b5651d"; ctx.fillRect(x*TILE-cameraX,y*TILE,TILE,TILE); }
-      if(b===5){ ctx.fillStyle="#b0b0b0"; ctx.fillRect(x*TILE-cameraX,y*TILE,TILE,TILE); }
-      if(b===6){ ctx.fillStyle="#ffd700"; ctx.fillRect(x*TILE-cameraX,y*TILE,TILE,TILE); }
-      if(b===7){ ctx.fillStyle="#0dd"; ctx.fillRect(x*TILE-cameraX,y*TILE,TILE,TILE); }
-      if(b===8){ ctx.fillStyle="#00f"; ctx.fillRect(x*TILE-cameraX,y*TILE,TILE,TILE); }
+      if(!b) continue;
+      const colors={
+        1:"#654321",2:"#888",3:"#deb887",
+        4:"#b5651d",5:"#aaa",6:"#ffd700",7:"#0dd",8:"#00f"
+      };
+      ctx.fillStyle=colors[b];
+      ctx.fillRect(x*TILE-cameraX,y*TILE,TILE,TILE);
     }
   }
-}
 
-function drawPlayer(){ ctx.fillStyle="red"; ctx.fillRect(player.x-cameraX,player.y,player.w,player.h); }
-function drawMonsters(){ monsters.forEach(mon=>{ ctx.fillStyle="green"; ctx.fillRect(mon.x-cameraX,mon.y,mon.w,mon.h); }); }
-function drawUI(){
+  ctx.fillStyle="red";
+  ctx.fillRect(player.x-cameraX,player.y,player.w,player.h);
+
+  ctx.fillStyle="green";
+  monsters.forEach(m=>{
+    ctx.fillRect(m.x-cameraX,m.y,m.w,m.h);
+  });
+
   ctx.fillStyle="black";
-  ctx.fillText("HP: "+player.hp,10,20);
-  ctx.fillText("Blöcke: Erde "+inventory.dirt+", Stein "+inventory.stone+", Holz "+inventory.wood+", Eisen "+inventory.iron+", Gold "+inventory.gold+", Diamant "+inventory.diamond,10,40);
-  ctx.fillText("Werkbank: "+inventory.table+", Schwert: "+inventory.sword+", Spitzhacke: "+inventory.pickaxe,10,60);
-  ctx.fillText("C=Craft, T=Werkbank setzen, Maus=Block",10,80);
-  ctx.fillText("Tag/Nacht: "+Math.floor(time*24)+":00",10,100);
+  ctx.fillText("HP:"+player.hp,10,20);
+  ctx.fillText("Slot:"+(selectedSlot+1),10,40);
 }
 
-// Loop
+/* ================= LOOP ================= */
 function loop(){
   updateTime();
   extendWorld();
   updatePlayer();
-  updateCamera();
   spawnMonsters();
   updateMonsters();
-  drawWorld();
-  drawPlayer();
-  drawMonsters();
-  drawUI();
+  draw();
   requestAnimationFrame(loop);
 }
-
 loop();
 </script>
 </body>
