@@ -2,99 +2,90 @@
 <html lang="de">
 <head>
 <meta charset="UTF-8">
-<title>Mini Minecraft 2D</title>
+<title>Mini Minecraft 2D – Full Survival</title>
 <style>
 body{margin:0;overflow:hidden;background:#87ceeb}
 canvas{display:block}
+#gui{
+  position:absolute;left:50%;top:50%;
+  transform:translate(-50%,-50%);
+  background:#333;color:white;
+  padding:10px;display:none;
+  border:3px solid #777;
+}
 </style>
 </head>
 <body>
 
 <canvas id="game"></canvas>
+<div id="gui"></div>
 
 <script>
 /* ================= BASIS ================= */
-const canvas = document.getElementById("game");
-const ctx = canvas.getContext("2d");
-canvas.width = 900;
-canvas.height = 450;
-
-const TILE = 40;
-const ROWS = 12;
+const canvas=document.getElementById("game");
+const ctx=canvas.getContext("2d");
+canvas.width=900; canvas.height=450;
+const TILE=40, ROWS=12;
 
 /* Block IDs
-0 Luft | 1 Erde | 2 Stein | 3 Holz | 9 Haus
+0 Luft | 1 Erde | 2 Stein | 3 Holz | 4 Werkbank
+5 Bett | 6 Redstone | 7 Lampe | 8 Hebel
 */
-
-let world = [];
-let cameraX = 0;
+let world=[], cameraX=0;
 
 /* ================= WELT ================= */
-function generateColumn(x){
-  let col=[];
+function genCol(x){
+  let c=[];
   for(let y=0;y<ROWS;y++){
-    if(y<5) col.push(0);
-    else if(y===5) col.push(1);
-    else col.push(2);
+    if(y<5) c.push(0);
+    else if(y===5) c.push(1);
+    else c.push(2);
   }
-
-  // Baum
-  if(Math.random()<0.08){
-    col[4]=3;
-    col[3]=3;
-  }
-
-  // Dorf-Häuser
-  if(x%50===0){
-    col[5]=9;
-    col[4]=9;
-    col[3]=9;
-  }
-
-  return col;
+  if(Math.random()<0.1){ c[4]=3; c[3]=3; }
+  if(x%60===0){ c[5]=3; }
+  return c;
 }
-
-for(let i=0;i<80;i++) world.push(generateColumn(i));
-
+for(let i=0;i<80;i++) world.push(genCol(i));
 function extendWorld(){
-  if(cameraX/TILE + 30 > world.length){
-    for(let i=0;i<20;i++) world.push(generateColumn(world.length+i));
+  if(cameraX/TILE+30>world.length){
+    for(let i=0;i<20;i++) world.push(genCol(world.length+i));
   }
 }
 
 /* ================= SPIELER ================= */
 const player={
-  x:200,y:0,w:30,h:30,
-  vy:0,onGround:false,
-  hp:10,hunger:10
+  x:200,y:0,w:30,h:30,vy:0,onGround:false,
+  hp:10,hunger:10,lastHit:0
 };
 
 /* ================= ENTITIES ================= */
-let monsters=[];
-let animals=[];
-let villagers=[];
+let monsters=[], animals=[], villagers=[];
+
+/* ================= INVENTAR ================= */
+let inventory={
+  dirt:0,wood:0,stone:0,food:3,emerald:0,
+  bed:1,redstone:3,lever:1,lamp:1
+};
 
 /* ================= STEUERUNG ================= */
 const keys={};
-document.addEventListener("keydown",e=>keys[e.key]=true);
+document.addEventListener("keydown",e=>{
+  keys[e.key]=true;
+  if(e.key==="e") toggleInventory();
+});
 document.addEventListener("keyup",e=>keys[e.key]=false);
 
 /* ================= PHYSIK ================= */
 function solidAt(x,y){
-  const bx=Math.floor(x/TILE);
-  const by=Math.floor(y/TILE);
-  return world[bx]?.[by]>0;
+  return world[Math.floor(x/TILE)]?.[Math.floor(y/TILE)]>0;
 }
-
-function applyPhysics(o){
-  o.vy+=0.5;
-  o.y+=o.vy;
+function physics(o){
+  o.vy+=0.5; o.y+=o.vy;
   const fy=Math.floor((o.y+o.h)/TILE);
   const fx=Math.floor(o.x/TILE);
   if(world[fx]?.[fy]>0){
     o.y=fy*TILE-o.h;
-    o.vy=0;
-    o.onGround=true;
+    o.vy=0; o.onGround=true;
   } else o.onGround=false;
 }
 
@@ -102,71 +93,100 @@ function applyPhysics(o){
 function updatePlayer(){
   if(keys["a"]) player.x-=4;
   if(keys["d"]) player.x+=4;
-  if(keys["w"] && player.onGround) player.vy=-10;
-  applyPhysics(player);
-
-  cameraX=player.x-canvas.width/2;
-  if(cameraX<0) cameraX=0;
+  if(keys["w"]&&player.onGround) player.vy=-10;
+  physics(player);
+  cameraX=Math.max(0,player.x-canvas.width/2);
 }
 
 /* ================= TAG / NACHT ================= */
 let time=0;
 function updateTime(){
-  time+=0.0002; // SEHR LANGSAM
+  time+=0.00015; // LANGSAM
   if(time>1) time=0;
 }
 
 /* ================= MONSTER ================= */
 function spawnMonsters(){
   if(time>0.5 && Math.random()<0.01){
-    monsters.push({x:player.x+600,y:0,w:30,h:30,vy:0});
+    monsters.push({x:player.x+500,y:0,w:30,h:30,vy:0,lastHit:0});
   }
 }
 function updateMonsters(){
   monsters.forEach(m=>{
     m.x+=(player.x>m.x?1:-1)*1.2;
-    applyPhysics(m);
+    physics(m);
+
+    // SCHADEN (Cooldown)
+    if(Date.now()-m.lastHit>800 &&
+       player.x<m.x+m.w &&
+       player.x+player.w>m.x &&
+       player.y<m.y+m.h &&
+       player.y+player.h>m.y){
+      player.hp--;
+      m.lastHit=Date.now();
+    }
   });
 }
 
 /* ================= TIERE ================= */
 function spawnAnimals(){
-  if(time<0.5 && Math.random()<0.01){
+  if(time<0.5 && Math.random()<0.01)
     animals.push({x:player.x+400,y:0,w:30,h:30,vy:0});
-  }
 }
 function updateAnimals(){
   animals.forEach(a=>{
     if(Math.random()<0.02) a.x+=Math.random()<0.5?-1:1;
-    applyPhysics(a);
+    physics(a);
   });
 }
 
 /* ================= DORFBEWOHNER ================= */
 function spawnVillagers(){
-  if(Math.random()<0.005){
-    villagers.push({x:player.x+500,y:0,w:30,h:30,vy:0});
-  }
+  if(Math.random()<0.004)
+    villagers.push({x:player.x+600,y:0,w:30,h:30,vy:0});
 }
 function updateVillagers(){
   villagers.forEach(v=>{
     if(Math.random()<0.01) v.x+=Math.random()<0.5?-1:1;
-    applyPhysics(v);
+    physics(v);
   });
 }
 
-/* ================= HERZEN & HUNGER ================= */
-function drawHearts(){
-  for(let i=0;i<player.hp;i++){
-    ctx.fillStyle="red";
-    ctx.fillRect(player.x-cameraX+i*8,player.y-15,6,6);
+/* ================= INVENTAR GUI ================= */
+const gui=document.getElementById("gui");
+function toggleInventory(){
+  gui.style.display = gui.style.display==="block"?"none":"block";
+  gui.innerHTML=`
+  <b>Inventar</b><br>
+  Essen: ${inventory.food}<br>
+  Emeralds: ${inventory.emerald}<br>
+  Bett: ${inventory.bed}<br>
+  <button onclick="eat()">Essen</button>
+  `;
+}
+function eat(){
+  if(inventory.food>0){
+    inventory.food--;
+    player.hunger=Math.min(10,player.hunger+5);
   }
 }
-function drawHunger(){
-  for(let i=0;i<player.hunger;i++){
-    ctx.fillStyle="orange";
-    ctx.fillRect(player.x-cameraX+i*8,player.y-5,6,6);
+
+/* ================= BETT ================= */
+function sleep(){
+  if(time>0.5){
+    time=0.1;
+    monsters=[];
   }
+}
+
+/* ================= UI ================= */
+function drawHearts(){
+  for(let i=0;i<player.hp;i++)
+    ctx.fillRect(player.x-cameraX+i*8,player.y-15,6,6);
+}
+function drawHunger(){
+  for(let i=0;i<player.hunger;i++)
+    ctx.fillRect(player.x-cameraX+i*8,player.y-5,6,6);
 }
 
 /* ================= ZEICHNEN ================= */
@@ -176,11 +196,10 @@ function draw(){
 
   for(let x=0;x<world.length;x++){
     for(let y=0;y<ROWS;y++){
-      const b=world[x][y];
-      if(!b) continue;
-      const c={1:"#654321",2:"#888",3:"#deb887",9:"#a0522d"};
-      ctx.fillStyle=c[b];
-      ctx.fillRect(x*TILE-cameraX,y*TILE,TILE,TILE);
+      if(world[x][y]>0){
+        ctx.fillStyle="#777";
+        ctx.fillRect(x*TILE-cameraX,y*TILE,TILE,TILE);
+      }
     }
   }
 
@@ -196,8 +215,8 @@ function draw(){
   ctx.fillStyle="#ffdead";
   villagers.forEach(v=>ctx.fillRect(v.x-cameraX,v.y,v.w,v.h));
 
-  drawHearts();
-  drawHunger();
+  ctx.fillStyle="red"; drawHearts();
+  ctx.fillStyle="orange"; drawHunger();
 }
 
 /* ================= LOOP ================= */
@@ -211,6 +230,11 @@ function loop(){
   updateMonsters();
   updateAnimals();
   updateVillagers();
+
+  // Hunger
+  if(Math.random()<0.002) player.hunger=Math.max(0,player.hunger-1);
+  if(player.hunger===0 && Math.random()<0.01) player.hp--;
+
   draw();
   requestAnimationFrame(loop);
 }
